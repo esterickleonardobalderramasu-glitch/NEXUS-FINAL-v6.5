@@ -3,10 +3,10 @@
 -- Motor de Juego: Sistema de Persistencia Relacional SQL Server
 -- ============================================================================
 
-CREATE DATABASE NexusV65DB;
+CREATE DATABASE NexusV65DB
 GO
 
-USE NexusV65DB;
+USE NexusV65DB
 GO
 
 -- 1. TABLA: Cadetes
