@@ -18,7 +18,7 @@ namespace NexusVideojuegoEngine
         private void InicializarComponentes()
         {
             this.Text = "NEXUS OS v6.5 — Menú Principal de Operaciones (GUI)";
-            this.Size = new Size(650, 520);
+            this.Size = new Size(650, 580);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(15, 20, 30);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -90,9 +90,19 @@ namespace NexusVideojuegoEngine
             };
             this.Controls.Add(btnPerfil);
 
-            // Botón 4: Salir
+            // Botón 4: Unidad 5 (Eventos, Validaciones y Archivos)
             btnTop += btnSpacing;
-            Button btnSalir = CrearBoton("4. SALIR DEL SISTEMA", new Point(120, btnTop));
+            Button btnUnidad5 = CrearBoton("4. UNIDAD 5: REGISTRO Y ARCHIVOS (.TXT)", new Point(120, btnTop));
+            btnUnidad5.Click += (s, e) =>
+            {
+                FormRegistroCadete formU5 = new FormRegistroCadete();
+                formU5.ShowDialog();
+            };
+            this.Controls.Add(btnUnidad5);
+
+            // Botón 5: Salir
+            btnTop += btnSpacing;
+            Button btnSalir = CrearBoton("5. SALIR DEL SISTEMA", new Point(120, btnTop));
             btnSalir.Click += (s, e) => Application.Exit();
             this.Controls.Add(btnSalir);
         }
@@ -112,6 +122,8 @@ namespace NexusVideojuegoEngine
             };
             btn.FlatAppearance.BorderColor = Color.Cyan;
             btn.FlatAppearance.BorderSize = 1;
+            btn.MouseEnter += (s, e) => btn.BackColor = Color.FromArgb(40, 60, 90);
+            btn.MouseLeave += (s, e) => btn.BackColor = Color.FromArgb(25, 35, 50);
             return btn;
         }
     }
