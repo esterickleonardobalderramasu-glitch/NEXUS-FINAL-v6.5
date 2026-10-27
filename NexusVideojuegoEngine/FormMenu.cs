@@ -18,7 +18,7 @@ namespace NexusVideojuegoEngine
         private void InicializarComponentes()
         {
             this.Text = "NEXUS OS v6.5 — Menú Principal de Operaciones (GUI)";
-            this.Size = new Size(650, 580);
+            this.Size = new Size(650, 630);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(15, 20, 30);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -90,7 +90,7 @@ namespace NexusVideojuegoEngine
             };
             this.Controls.Add(btnPerfil);
 
-            // Botón 4: Unidad 5 (Eventos, Validaciones y Archivos)
+            // Botón 4: Unidad 5
             btnTop += btnSpacing;
             Button btnUnidad5 = CrearBoton("4. UNIDAD 5: REGISTRO Y ARCHIVOS (.TXT)", new Point(120, btnTop));
             btnUnidad5.Click += (s, e) =>
@@ -100,9 +100,19 @@ namespace NexusVideojuegoEngine
             };
             this.Controls.Add(btnUnidad5);
 
-            // Botón 5: Salir
+            // Botón 5: Unidad 6 (DataSets, DataBinding y Reportes)
             btnTop += btnSpacing;
-            Button btnSalir = CrearBoton("5. SALIR DEL SISTEMA", new Point(120, btnTop));
+            Button btnUnidad6 = CrearBoton("5. UNIDAD 6: DATASETS Y REPORTES GRÁFICOS", new Point(120, btnTop));
+            btnUnidad6.Click += (s, e) =>
+            {
+                FormReportesYDataSets formU6 = new FormReportesYDataSets();
+                formU6.ShowDialog();
+            };
+            this.Controls.Add(btnUnidad6);
+
+            // Botón 6: Salir
+            btnTop += btnSpacing;
+            Button btnSalir = CrearBoton("6. SALIR DEL SISTEMA", new Point(120, btnTop));
             btnSalir.Click += (s, e) => Application.Exit();
             this.Controls.Add(btnSalir);
         }
