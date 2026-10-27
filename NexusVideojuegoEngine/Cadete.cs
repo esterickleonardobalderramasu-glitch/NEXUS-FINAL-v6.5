@@ -5,12 +5,14 @@ namespace NexusVideojuegoEngine
 {
     public class Cadete : Personaje
     {
+        public int CadeteID { get; set; } = 1;
         public int XP { get; private set; }
         public int Rango { get; private set; }
         public List<ObjetoInventario> Inventario { get; private set; }
 
         public Cadete(string nombre, int posX, int posY, int vida) : base(nombre, posX, posY, vida)
         {
+            CadeteID = 1;
             XP = 0;
             Rango = 1;
             Inventario = new List<ObjetoInventario>();

@@ -1,98 +1,84 @@
 using System;
-using System.Collections.Generic;
+using System.Data;
 using Microsoft.Data.SqlClient;
 
 namespace NexusVideojuegoEngine
 {
     public class GestorBD
     {
-        private readonly string cadenaConexion = @"Server=(localdb)\MSSQLLocalDB;Database=NexusV65DB;Trusted_Connection=True;TrustServerCertificate=True;";
+        // Conexión directa a SQL Server Express
+        private readonly string connectionString = 
+            @"Server=.\SQLEXPRESS;Database=NexusV65DB;Integrated Security=True;TrustServerCertificate=True;";
 
+        /// <summary>
+        /// Comprueba la conexión activa con SQL Server.
+        /// </summary>
         public bool ProbarConexion()
         {
             try
             {
-                using (SqlConnection conexion = new SqlConnection(cadenaConexion))
+                using (SqlConnection connection = new SqlConnection(connectionString))
                 {
-                    conexion.Open();
-                    return true;
+                    connection.Open();
+                    return connection.State == ConnectionState.Open;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR BD]: No se pudo conectar a SQL Server. Detalle: {ex.Message}");
+                Console.WriteLine($"Error de conexión BD: {ex.Message}");
                 return false;
             }
         }
 
         /// <summary>
-        /// Guarda el estado del Cadete y registra la Bitácora dentro de una Transacción T-SQL.
-        /// Garantiza Atomicidad (ACID): si falla un registro, nada se guarda.
+        /// Persistencia transaccional ACID en SQL Server.
         /// </summary>
         public bool GuardarPartidaTransaccional(Cadete cadete, int energiaCore)
         {
-            using (SqlConnection conexion = new SqlConnection(cadenaConexion))
+            using (SqlConnection connection = new SqlConnection(connectionString))
             {
-                conexion.Open();
-                SqlTransaction transaccion = conexion.BeginTransaction();
+                connection.Open();
+                SqlTransaction transaction = connection.BeginTransaction();
 
                 try
                 {
-                    // 1. Actualizar Datos del Cadete
-                    string sqlCadete = @"UPDATE Cadetes 
-                                         SET Rango = @Rango, Experiencia = @XP, VidaActual = @Vida, 
-                                             VidaMax = @VidaMax, EnergiaCore = @Energia, FechaUltimoAcceso = GETDATE() 
-                                         WHERE Nombre = @Nombre;";
+                    string queryCadete = @"
+                        IF EXISTS (SELECT 1 FROM Cadetes WHERE CadeteID = @ID)
+                            UPDATE Cadetes SET Vida = @Vida, XP = @XP WHERE CadeteID = @ID;
+                        ELSE
+                            INSERT INTO Cadetes (CadeteID, Nombre, Rango, Vida, VidaMax, XP)
+                            VALUES (@ID, @Nombre, @Rango, @Vida, @VidaMax, @XP);";
 
-                    using (SqlCommand cmd = new SqlCommand(sqlCadete, conexion, transaccion))
+                    using (SqlCommand cmdCadete = new SqlCommand(queryCadete, connection, transaction))
                     {
-                        cmd.Parameters.AddWithValue("@Rango", cadete.Rango);
-                        cmd.Parameters.AddWithValue("@XP", cadete.XP);
-                        cmd.Parameters.AddWithValue("@Vida", cadete.Vida);
-                        cmd.Parameters.AddWithValue("@VidaMax", cadete.VidaMax);
-                        cmd.Parameters.AddWithValue("@Energia", energiaCore);
-                        cmd.Parameters.AddWithValue("@Nombre", cadete.Nombre);
-                        
-                        int filasAfectadas = cmd.ExecuteNonQuery();
-
-                        // Si el cadete no existe aún en la BD, lo insertamos
-                        if (filasAfectadas == 0)
-                        {
-                            string sqlInsert = @"INSERT INTO Cadetes (Nombre, Rango, Experiencia, VidaActual, VidaMax, EnergiaCore) 
-                                                 VALUES (@Nombre, @Rango, @XP, @Vida, @VidaMax, @Energia);";
-                            using (SqlCommand cmdInsert = new SqlCommand(sqlInsert, conexion, transaccion))
-                            {
-                                cmdInsert.Parameters.AddWithValue("@Nombre", cadete.Nombre);
-                                cmdInsert.Parameters.AddWithValue("@Rango", cadete.Rango);
-                                cmdInsert.Parameters.AddWithValue("@XP", cadete.XP);
-                                cmdInsert.Parameters.AddWithValue("@Vida", cadete.Vida);
-                                cmdInsert.Parameters.AddWithValue("@VidaMax", cadete.VidaMax);
-                                cmdInsert.Parameters.AddWithValue("@Energia", energiaCore);
-                                cmdInsert.ExecuteNonQuery();
-                            }
-                        }
+                        cmdCadete.Parameters.AddWithValue("@ID", cadete.CadeteID);
+                        cmdCadete.Parameters.AddWithValue("@Nombre", cadete.Nombre);
+                        cmdCadete.Parameters.AddWithValue("@Rango", cadete.Rango);
+                        cmdCadete.Parameters.AddWithValue("@Vida", cadete.Vida);
+                        cmdCadete.Parameters.AddWithValue("@VidaMax", cadete.VidaMax);
+                        cmdCadete.Parameters.AddWithValue("@XP", cadete.XP);
+                        cmdCadete.ExecuteNonQuery();
                     }
 
-                    // 2. Registrar Evento de Persistencia en Bitácora
-                    string sqlBitacora = @"INSERT INTO BitacoraEventos (CadeteId, Mensaje) 
-                                           VALUES ((SELECT TOP 1 CadeteId FROM Cadetes WHERE Nombre = @Nombre), @Mensaje);";
+                    string queryBitacora = @"
+                        INSERT INTO BitacoraEventos (FechaHora, Descripcion, NivelEnergia)
+                        VALUES (@Fecha, @Desc, @Energia);";
 
-                    using (SqlCommand cmdLog = new SqlCommand(sqlBitacora, conexion, transaccion))
+                    using (SqlCommand cmdBitacora = new SqlCommand(queryBitacora, connection, transaction))
                     {
-                        cmdLog.Parameters.AddWithValue("@Nombre", cadete.Nombre);
-                        cmdLog.Parameters.AddWithValue("@Mensaje", $"Guardado de partida exitoso — HP: {cadete.Vida}, Energía: {energiaCore}%");
-                        cmdLog.ExecuteNonQuery();
+                        cmdBitacora.Parameters.AddWithValue("@Fecha", DateTime.Now);
+                        cmdBitacora.Parameters.AddWithValue("@Desc", $"Partida guardada para el cadete {cadete.Nombre}");
+                        cmdBitacora.Parameters.AddWithValue("@Energia", energiaCore);
+                        cmdBitacora.ExecuteNonQuery();
                     }
 
-                    // Confirmar Transacción (ACID - Commit)
-                    transaccion.Commit();
+                    transaction.Commit();
                     return true;
                 }
                 catch (Exception ex)
                 {
-                    // Revertir Cambios en caso de error (ACID - Rollback)
-                    transaccion.Rollback();
-                    Console.WriteLine($"[ERROR PERSISTENCIA]: Transacción abortada. Detalle: {ex.Message}");
+                    transaction.Rollback();
+                    Console.WriteLine($"Error en transacción SQL: {ex.Message}");
                     return false;
                 }
             }

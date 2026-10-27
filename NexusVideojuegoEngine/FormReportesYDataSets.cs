@@ -18,8 +18,8 @@ namespace NexusVideojuegoEngine
         private PrintDocument printDocument = new PrintDocument();
         private PrintPreviewDialog printPreviewDialog = new PrintPreviewDialog();
 
-        // Cadena de conexión LocalDB (Coincide con GestorBD)
-        private string connectionString = @"Server=(localdb)\MSSQLLocalDB;Database=NexusV65DB;Integrated Security=True;TrustServerCertificate=True;";
+        // Conexión directa a SQL Server Express
+        private string connectionString = @"Server=.\SQLEXPRESS;Database=NexusV65DB;Integrated Security=True;TrustServerCertificate=True;";
 
         public FormReportesYDataSets()
         {
@@ -35,7 +35,6 @@ namespace NexusVideojuegoEngine
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
 
-            // Encabezado
             Label lblTitulo = new Label
             {
                 Text = "UNIDAD 6: DATASETS, DATABINDING Y REPORTES GRÁFICOS",
@@ -46,7 +45,6 @@ namespace NexusVideojuegoEngine
             };
             this.Controls.Add(lblTitulo);
 
-            // DataGridView (Control Ligado a Datos)
             dgvDatos = new DataGridView
             {
                 Location = new Point(30, 50),
@@ -59,7 +57,6 @@ namespace NexusVideojuegoEngine
             };
             this.Controls.Add(dgvDatos);
 
-            // Label de Estado
             lblEstado = new Label
             {
                 Text = "Estado: Presione '1. CARGAR DATASET' para consultar la base de datos.",
@@ -70,7 +67,6 @@ namespace NexusVideojuegoEngine
             };
             this.Controls.Add(lblEstado);
 
-            // Botones de Operaciones
             Button btnCargarDataSet = CrearBoton("1. CARGAR DATASET (SQL)", 30, 370, 230);
             btnCargarDataSet.Click += BtnCargarDataSet_Click;
             this.Controls.Add(btnCargarDataSet);
@@ -83,16 +79,11 @@ namespace NexusVideojuegoEngine
             btnImprimirReporte.Click += BtnImprimirReporte_Click;
             this.Controls.Add(btnImprimirReporte);
 
-            // Configuración de Impresión / Reporte
             printDocument.PrintPage += PrintDocument_PrintPage;
             printPreviewDialog.Document = printDocument;
             printPreviewDialog.Width = 850;
             printPreviewDialog.Height = 650;
         }
-
-        // ============================================================================
-        // 1. CARGA Y MODIFICACIÓN DE DATASET CON DATABINDING
-        // ============================================================================
 
         private void BtnCargarDataSet_Click(object? sender, EventArgs e)
         {
@@ -107,18 +98,17 @@ namespace NexusVideojuegoEngine
                     dataSet.Clear();
                     adapter.Fill(dataSet, "Cadetes");
 
-                    // Enlazar datos mediante BindingSource (Control ligado a datos)
                     bindingSource.DataSource = dataSet.Tables["Cadetes"];
                     dgvDatos.DataSource = bindingSource;
 
-                    lblEstado.Text = "Estado: DataSet cargado exitosamente. Puede editar filas directamente en la grilla.";
+                    lblEstado.Text = "Estado: DataSet cargado exitosamente desde SQL Server Express.";
                     lblEstado.ForeColor = Color.LightGreen;
                 }
             }
             catch (Exception ex)
             {
-                lblEstado.Text = $"Estado: Atencion al cargar SQL ({ex.Message}). Carga simulada activa.";
-                lblEstado.ForeColor = Color.Orange;
+                lblEstado.Text = $"Error SQL: {ex.Message}";
+                lblEstado.ForeColor = Color.OrangeRed;
             }
         }
 
@@ -128,7 +118,7 @@ namespace NexusVideojuegoEngine
             {
                 if (adapter != null && dataSet.Tables["Cadetes"] != null)
                 {
-                    this.BindingContext[dataSet, "Cadetes"].EndCurrentEdit();
+                    this.BindingContext[dataSet, "Cadetes"]?.EndCurrentEdit();
                     int filasAfectadas = adapter.Update(dataSet, "Cadetes");
 
                     MessageBox.Show($"¡Base de datos actualizada correctamente! Filas procesadas: {filasAfectadas}", 
@@ -146,13 +136,10 @@ namespace NexusVideojuegoEngine
             }
         }
 
-        // ============================================================================
-        // 2. IMPRESIÓN Y REPORTES GRÁFICOS
-        // ============================================================================
-
         private void BtnImprimirReporte_Click(object? sender, EventArgs e)
         {
-            if (dataSet.Tables["Cadetes"] == null || dataSet.Tables["Cadetes"].Rows.Count == 0)
+            DataTable? dt = dataSet.Tables["Cadetes"];
+            if (dt == null || dt.Rows.Count == 0)
             {
                 MessageBox.Show("Cargue el DataSet antes de generar el reporte gráfico.", "Atención", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -170,7 +157,6 @@ namespace NexusVideojuegoEngine
 
             int yPos = 40;
 
-            // Encabezado del Reporte
             g.DrawString("NEXUS OS v6.5 — REPORTE Y ESTADÍSTICAS DE CADETES", titleFont, Brushes.Black, 50, yPos);
             yPos += 25;
             g.DrawLine(Pens.Black, 50, yPos, 750, yPos);
@@ -179,11 +165,11 @@ namespace NexusVideojuegoEngine
             g.DrawString($"Fecha del Reporte: {DateTime.Now:yyyy-MM-dd HH:mm:ss}", bodyFont, Brushes.DarkGray, 50, yPos);
             yPos += 30;
 
-            // Reporte Gráfico: Dibujo de Barras Estadísticas de Vida
             g.DrawString("--- REPORTES GRÁFICOS: ESTADÍSTICAS DE VIDA (HP) ---", headerFont, Brushes.Navy, 50, yPos);
             yPos += 30;
 
-            DataTable dt = dataSet.Tables["Cadetes"]!;
+            DataTable? dt = dataSet.Tables["Cadetes"];
+            if (dt == null) return;
 
             foreach (DataRow row in dt.Rows)
             {
@@ -192,10 +178,8 @@ namespace NexusVideojuegoEngine
                 string nombre = row["Nombre"]?.ToString() ?? "Cadete";
                 int vida = Convert.ToInt32(row["Vida"] != DBNull.Value ? row["Vida"] : 0);
 
-                // Texto Cadete
                 g.DrawString($"{nombre} ({vida} HP):", bodyFont, Brushes.Black, 50, yPos);
 
-                // Barra Gráfica Proporcional
                 int barWidth = Math.Min(350, Math.Max(10, vida * 3));
                 g.FillRectangle(Brushes.Teal, 240, yPos, barWidth, 18);
                 g.DrawRectangle(Pens.DarkSlateGray, 240, yPos, barWidth, 18);
@@ -207,7 +191,6 @@ namespace NexusVideojuegoEngine
             g.DrawLine(Pens.Gray, 50, yPos, 750, yPos);
             yPos += 25;
 
-            // Resumen Tabular
             g.DrawString("ID", headerFont, Brushes.Black, 50, yPos);
             g.DrawString("Nombre", headerFont, Brushes.Black, 110, yPos);
             g.DrawString("Rango", headerFont, Brushes.Black, 320, yPos);
@@ -219,15 +202,14 @@ namespace NexusVideojuegoEngine
             {
                 if (row.RowState == DataRowState.Deleted) continue;
 
-                g.DrawString(row["CadeteID"].ToString(), bodyFont, Brushes.Black, 50, yPos);
-                g.DrawString(row["Nombre"].ToString(), bodyFont, Brushes.Black, 110, yPos);
-                g.DrawString(row["Rango"].ToString(), bodyFont, Brushes.Black, 320, yPos);
-                g.DrawString(row["Vida"].ToString(), bodyFont, Brushes.Black, 470, yPos);
-                g.DrawString(row["XP"].ToString(), bodyFont, Brushes.Black, 570, yPos);
+                g.DrawString(row["CadeteID"]?.ToString() ?? "", bodyFont, Brushes.Black, 50, yPos);
+                g.DrawString(row["Nombre"]?.ToString() ?? "", bodyFont, Brushes.Black, 110, yPos);
+                g.DrawString(row["Rango"]?.ToString() ?? "", bodyFont, Brushes.Black, 320, yPos);
+                g.DrawString(row["Vida"]?.ToString() ?? "", bodyFont, Brushes.Black, 470, yPos);
+                g.DrawString(row["XP"]?.ToString() ?? "", bodyFont, Brushes.Black, 570, yPos);
                 yPos += 20;
             }
 
-            // Pie de página
             g.DrawString("Documento generado automáticamente por NEXUS ENGINE v6.5 — Módulo de Reportes de Unidad 6", 
                          new Font("Consolas", 8, FontStyle.Italic), Brushes.Gray, 50, 1000);
         }
