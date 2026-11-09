@@ -1,140 +1,95 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
 
 namespace NexusVideojuegoEngine
 {
-    public class FormMenu : Form
+    public partial class FormMenu : Form
     {
-        private Cadete jugadorCadete = new Cadete("NEXUS", 1, 1, 100);
-        private int energiaCore = 35;
-        private GestorBD gestorBD = new GestorBD();
+        private Cadete cadeteActual;
+        private readonly GestorBD gestorBD;
 
         public FormMenu()
         {
-            InicializarComponentes();
+            InitializeComponent();
+
+            gestorBD = new GestorBD();
+            cadeteActual = new Cadete("Alfa-1", 0, 0, 100);
+
+            RefrescarHUD();
         }
 
-        private void InicializarComponentes()
+        private void RefrescarHUD()
         {
-            this.Text = "NEXUS OS v6.5 — Menú Principal de Operaciones (GUI)";
-            this.Size = new Size(650, 630);
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.BackColor = Color.FromArgb(15, 20, 30);
-            this.FormBorderStyle = FormBorderStyle.FixedSingle;
-            this.MaximizeBox = false;
+            lblCadeteNombre.Text = $"OPERADOR: {cadeteActual.Nombre}";
+            lblCadeteRango.Text = $"RANGO: {cadeteActual.Rango}";
+            lblCadetePosicion.Text = $"MATRIZ (X,Y): ({cadeteActual.PosX}, {cadeteActual.PosY})";
+            lblCadeteXP.Text = $"XP ACUMULADA: {cadeteActual.XP} PTS";
 
-            // Encabezado
-            Label lblTitulo = new Label
-            {
-                Text = "NEXUS ENGINE v6.5",
-                Font = new Font("Consolas", 20, FontStyle.Bold),
-                ForeColor = Color.Cyan,
-                AutoSize = true,
-                Location = new Point(180, 25)
-            };
-            this.Controls.Add(lblTitulo);
-
-            Label lblSubtitulo = new Label
-            {
-                Text = "SISTEMA DE CONTROL Y SIMULACIÓN DE MISIONES (2297)",
-                Font = new Font("Consolas", 9, FontStyle.Regular),
-                ForeColor = Color.DarkCyan,
-                AutoSize = true,
-                Location = new Point(140, 65)
-            };
-            this.Controls.Add(lblSubtitulo);
-
-            int btnTop = 110;
-            int btnSpacing = 50;
-
-            // Botón 1: Mapa 2D
-            Button btnMapa2D = CrearBoton("1. DESPLIEGUE A MATRIZ DE SIMULACIÓN 2D", new Point(120, btnTop));
-            btnMapa2D.Click += (s, e) =>
-            {
-                FormMapa2D mapa = new FormMapa2D();
-                mapa.ShowDialog();
-            };
-            this.Controls.Add(btnMapa2D);
-
-            // Botón 2: Persistencia SQL
-            btnTop += btnSpacing;
-            Button btnGuardarBD = CrearBoton("2. GUARDAR PARTIDA EN SQL SERVER (T-SQL)", new Point(120, btnTop));
-            btnGuardarBD.Click += (s, e) =>
-            {
-                bool exito = gestorBD.GuardarPartidaTransaccional(jugadorCadete, energiaCore);
-                if (exito)
-                {
-                    MessageBox.Show("¡Estado del Cadete y evento de Bitácora guardados exitosamente mediante Transacción T-SQL!", 
-                                    "Persistencia SQL Server", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                else
-                {
-                    MessageBox.Show("No se pudo conectar a SQL Server. Asegúrate de tener LocalDB o SQL Express en ejecución.", 
-                                    "Atención", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
-            };
-            this.Controls.Add(btnGuardarBD);
-
-            // Botón 3: Perfil
-            btnTop += btnSpacing;
-            Button btnPerfil = CrearBoton("3. PERFIL DEL CADETE Y ESTADÍSTICAS", new Point(120, btnTop));
-            btnPerfil.Click += (s, e) =>
-            {
-                MessageBox.Show($"Cadete: {jugadorCadete.Nombre}\n" +
-                                $"Rango: Nivel {jugadorCadete.Rango}\n" +
-                                $"Salud: {jugadorCadete.Vida}/{jugadorCadete.VidaMax} HP\n" +
-                                $"Energía Core: {energiaCore}%\n" +
-                                $"Experiencia: {jugadorCadete.XP} XP", 
-                                "Perfil del Explorador", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            };
-            this.Controls.Add(btnPerfil);
-
-            // Botón 4: Unidad 5
-            btnTop += btnSpacing;
-            Button btnUnidad5 = CrearBoton("4. UNIDAD 5: REGISTRO Y ARCHIVOS (.TXT)", new Point(120, btnTop));
-            btnUnidad5.Click += (s, e) =>
-            {
-                FormRegistroCadete formU5 = new FormRegistroCadete();
-                formU5.ShowDialog();
-            };
-            this.Controls.Add(btnUnidad5);
-
-            // Botón 5: Unidad 6 (DataSets, DataBinding y Reportes)
-            btnTop += btnSpacing;
-            Button btnUnidad6 = CrearBoton("5. UNIDAD 6: DATASETS Y REPORTES GRÁFICOS", new Point(120, btnTop));
-            btnUnidad6.Click += (s, e) =>
-            {
-                FormReportesYDataSets formU6 = new FormReportesYDataSets();
-                formU6.ShowDialog();
-            };
-            this.Controls.Add(btnUnidad6);
-
-            // Botón 6: Salir
-            btnTop += btnSpacing;
-            Button btnSalir = CrearBoton("6. SALIR DEL SISTEMA", new Point(120, btnTop));
-            btnSalir.Click += (s, e) => Application.Exit();
-            this.Controls.Add(btnSalir);
+            int vida = Math.Clamp(cadeteActual.Vida, 0, cadeteActual.VidaMax);
+            barVida.Value = vida;
+            lblVidaTexto.Text = $"{vida} / {cadeteActual.VidaMax} HP";
         }
 
-        private Button CrearBoton(string texto, Point ubicacion)
+        private void tmrReloj_Tick(object? sender, EventArgs e)
         {
-            Button btn = new Button
+            lblRelojStatus.Text = $"SISTEMA: {DateTime.Now:HH:mm:ss}  |  STATUS ENGINE: ACTIVE";
+        }
+
+        private void btnMapa2D_Click(object? sender, EventArgs e)
+        {
+            FormMapa2D mapa = new FormMapa2D(cadeteActual);
+            mapa.ShowDialog();
+            RefrescarHUD();
+        }
+
+        private void btnRegistro_Click(object? sender, EventArgs e)
+        {
+            FormRegistroCadete registro = new FormRegistroCadete();
+            registro.ShowDialog();
+            RefrescarHUD();
+        }
+
+        private void btnReportes_Click(object? sender, EventArgs e)
+        {
+            FormReportesYDataSets reportes = new FormReportesYDataSets();
+            reportes.ShowDialog();
+            RefrescarHUD();
+        }
+
+        private void btnBD_Click(object? sender, EventArgs e)
+        {
+            bool ok = gestorBD.ProbarConexion();
+            if (ok)
+                MessageBox.Show("Conexión activa con la base de datos NexusV65DB.", "Persistencia SQL", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else
+                MessageBox.Show("No se pudo conectar a la base de datos.", "Error de BD", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            RefrescarHUD();
+        }
+
+        private void btnSalir_Click(object? sender, EventArgs e)
+        {
+            Application.Exit();
+        }
+
+        private void Boton_MouseEnter(object? sender, EventArgs e)
+        {
+            if (sender is Button btn)
             {
-                Text = texto,
-                Location = ubicacion,
-                Size = new Size(400, 40),
-                BackColor = Color.FromArgb(25, 35, 50),
-                ForeColor = Color.Cyan,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Consolas", 10, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            btn.FlatAppearance.BorderColor = Color.Cyan;
-            btn.FlatAppearance.BorderSize = 1;
-            btn.MouseEnter += (s, e) => btn.BackColor = Color.FromArgb(40, 60, 90);
-            btn.MouseLeave += (s, e) => btn.BackColor = Color.FromArgb(25, 35, 50);
-            return btn;
+                btn.BackColor = Color.FromArgb(32, 54, 82);
+                btn.ForeColor = Color.SpringGreen;
+                btn.FlatAppearance.BorderColor = Color.SpringGreen;
+            }
+        }
+
+        private void Boton_MouseLeave(object? sender, EventArgs e)
+        {
+            if (sender is Button btn)
+            {
+                btn.BackColor = Color.FromArgb(22, 33, 50);
+                btn.ForeColor = Color.Cyan;
+                btn.FlatAppearance.BorderColor = Color.FromArgb(0, 180, 216);
+            }
         }
     }
 }
