@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
-
+using NexusVideojuegoEngine.Models;
+    
 namespace NexusVideojuegoEngine
 {
     public partial class FormMapa2D : Form
     {
+        public PartidaCompletaDTO? PartidaActivaSQL { get; set; }
         private const int COLS = 15;
         private const int FILAS = 12;
         private const int TAM_CELDA = 40;

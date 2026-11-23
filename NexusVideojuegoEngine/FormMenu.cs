@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using NexusVideojuegoEngine.Data;
+using NexusVideojuegoEngine.Models;
 
 namespace NexusVideojuegoEngine
 {
@@ -38,7 +40,7 @@ namespace NexusVideojuegoEngine
         {
             this.Controls.Clear();
 
-            this.Text = "DEAD SIGNAL: PROTOCOLO RIG // TERMINAL DE MANDO (v6.9)";
+            this.Text = "DEAD SIGNAL: PROTOCOLO RIG // TERMINAL DE MANDO (v7.0)";
             this.Size = new Size(840, 520);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -253,17 +255,55 @@ namespace NexusVideojuegoEngine
         {
             if (!sesionIniciada) return;
 
-            FormMapa2D mapaTactico = new FormMapa2D();
-            mapaTactico.Text = $"DEAD SIGNAL — Operador #{idJugadorActivo}: {cadeteActivo} [{codigoRigActivo}]";
-            this.Hide();
-            mapaTactico.FormClosed += (s, args) => this.Show();
-            mapaTactico.Show();
+            try
+            {
+                // Crea automáticamente una ranura rápida en SQL Server para este despliegue
+                EstadoCadeteDTO estadoInicial = new EstadoCadeteDTO
+                {
+                    VidaActual = 100,
+                    VidaMax = 100,
+                    ExperienciaXP = 0,
+                    Nivel = 1,
+                    PosicionX = 1,
+                    PosicionY = 1,
+                    CargasEMP = 2
+                };
+
+                string ranuraAuto = $"Despliegue_{DateTime.Now:ddMM_HHmmss}";
+                int idPartida = _gestorBD.CrearNuevaPartida(idJugadorActivo, ranuraAuto, estadoInicial, new List<EntidadMapaDTO>());
+                PartidaCompletaDTO? partidaNueva = _gestorBD.CargarPartidaCompleta(idPartida);
+
+                AbrirMapaTactico(partidaNueva);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"No se pudo registrar la nueva partida en SQL Server:\n{ex.Message}",
+                    "Error SQL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void BtnTermPartidasSQL_Click(object? sender, EventArgs e)
         {
-            FormReportesYDataSets ventanaDatos = new FormReportesYDataSets();
-            ventanaDatos.ShowDialog(this);
+            if (!sesionIniciada) return;
+
+            using FormBovedaMemoria boveda = new FormBovedaMemoria(idJugadorActivo, cadeteActivo, codigoRigActivo);
+            if (boveda.ShowDialog(this) == DialogResult.OK && boveda.PartidaSeleccionada != null)
+            {
+                AbrirMapaTactico(boveda.PartidaSeleccionada);
+            }
+        }
+
+        private void AbrirMapaTactico(PartidaCompletaDTO? partida)
+        {
+            FormMapa2D mapaTactico = new FormMapa2D();
+            mapaTactico.PartidaActivaSQL = partida;
+
+            string infoRanura = partida != null ? $" | Ranura: {partida.NombreRanura} (#{partida.IdPartida})" : "";
+            mapaTactico.Text = $"DEAD SIGNAL — Operador: {cadeteActivo} [{codigoRigActivo}]{infoRanura}";
+
+            this.Hide();
+            mapaTactico.FormClosed += (s, args) => this.Show();
+            mapaTactico.Show();
         }
     }
 }
