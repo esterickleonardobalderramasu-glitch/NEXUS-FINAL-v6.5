@@ -52,6 +52,8 @@ namespace NexusVideojuegoEngine
         private int vidaMaxActual;
         private int xpActual;
         private int turnosJugados = 0;
+        private int cargasEMP = 2;
+        private const int MAX_CARGAS_EMP = 3;
         private readonly Random rng = new Random();
 
         private readonly List<Point> paredes = new List<Point>();
@@ -142,6 +144,7 @@ namespace NexusVideojuegoEngine
             vidaMaxActual = Math.Max(1, PartidaActivaSQL.Cadete.VidaMax);
             vidaActual = Math.Clamp(PartidaActivaSQL.Cadete.VidaActual, 1, vidaMaxActual);
             xpActual = PartidaActivaSQL.Cadete.ExperienciaXP;
+            cargasEMP = Math.Clamp(PartidaActivaSQL.Cadete.CargasEMP, 0, MAX_CARGAS_EMP);
 
             int posX = Math.Clamp(PartidaActivaSQL.Cadete.PosicionX, 0, COLS - 1);
             int posY = Math.Clamp(PartidaActivaSQL.Cadete.PosicionY, 0, FILAS - 1);
@@ -211,6 +214,7 @@ namespace NexusVideojuegoEngine
                 PartidaActivaSQL.Cadete.Nivel = 1 + (xpActual / 100);
                 PartidaActivaSQL.Cadete.PosicionX = cadeteActual.PosX;
                 PartidaActivaSQL.Cadete.PosicionY = cadeteActual.PosY;
+                PartidaActivaSQL.Cadete.CargasEMP = cargasEMP;
 
                 List<EntidadMapaDTO> entidadesSnapshot = new List<EntidadMapaDTO>();
 
@@ -341,6 +345,9 @@ namespace NexusVideojuegoEngine
                     if (nuevoX < COLS - 1) { nuevoX++; intentoMover = true; }
                     break;
                 case Keys.Space:
+                    EjecutarPulsoTactico();
+                    this.Invalidate();
+                    return true;
                     turnosJugados++;
                     EjecutarPulsoTactico();
                     this.Invalidate();
@@ -377,6 +384,14 @@ namespace NexusVideojuegoEngine
 
         private void EjecutarPulsoTactico()
         {
+            if (cargasEMP <= 0)
+            {
+                ultimoEvento = "[ALERTA RIG] SIN CARGAS EMP — RECOLECTA UN NÚCLEO DE ENERGÍA PARA RECARGAR.";
+                return;
+            }
+
+            cargasEMP--;
+            turnosJugados++;
             pulsoVisualFrames = 5;
             int destruidos = 0;
             int aturdidos = 0;
@@ -408,12 +423,12 @@ namespace NexusVideojuegoEngine
 
             if (destruidos > 0 || aturdidos > 0)
             {
-                ultimoEvento = $"[PULSO EMP] {destruidos} DESTRUIDO(S) | {aturdidos} BLINDADO(S) ATURDIDO(S).";
+                ultimoEvento = $"[PULSO EMP ({cargasEMP}/{MAX_CARGAS_EMP})] {destruidos} FUNDIDO(S) | {aturdidos} ATURDIDO(S).";
                 if (destruidos > 0) GenerarNuevoEnemigo();
             }
             else
             {
-                ultimoEvento = "[PULSO EMP] ONDA EMITIDA — SIN DRONES EN RANGO ADYACENTE (3x3).";
+                ultimoEvento = $"[PULSO EMP ({cargasEMP}/{MAX_CARGAS_EMP})] DESCARGA EMITIDA — SIN HOSTILES EN RANGO 3x3.";
             }
         }
 
@@ -443,6 +458,7 @@ namespace NexusVideojuegoEngine
                 if (nucleosEnergia[i] == posJugador)
                 {
                     nucleosEnergia.RemoveAt(i);
+                    cargasEMP = Math.Min(MAX_CARGAS_EMP, cargasEMP + 1);
                     xpActual += 25;
                     vidaActual = Math.Min(vidaMaxActual, vidaActual + 15);
                     ReubicarNuevoNucleo();
@@ -464,6 +480,7 @@ namespace NexusVideojuegoEngine
             if (posJugador == naveExtraccion)
             {
                 xpActual += 100;
+
                 ultimoEvento = "[EXTRACCIÓN COMPLETADA] +100 XP DE MISIÓN CUMPLIDA.";
                 SincronizarEstadoConSQL(silencioso: true);
                 tmrSimulacion.Stop();
@@ -737,7 +754,7 @@ namespace NexusVideojuegoEngine
 
             int nivelActual = 1 + (xpActual / 100);
             g.DrawString($"SECTOR: ({cadeteActual.PosX:D2},{cadeteActual.PosY:D2}) | TURNO: {turnosJugados}", fontTitulo, Brushes.Cyan, 25, 16);
-            g.DrawString($"HP: {vidaActual}/{vidaMaxActual}  |  XP: {xpActual} (NV.{nivelActual})", fontTitulo, Brushes.SpringGreen, 430, 16);
+            g.DrawString($"HP: {vidaActual}/{vidaMaxActual} | XP: {xpActual} (NV.{nivelActual}) | EMP: {cargasEMP}/{MAX_CARGAS_EMP}", fontTitulo, Brushes.SpringGreen, 390, 16);
 
             // 2. Tablero Táctico 15x12
             int mapW = COLS * TAM_CELDA;
