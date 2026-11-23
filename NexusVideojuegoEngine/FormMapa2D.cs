@@ -1,15 +1,19 @@
-﻿using System;
+﻿#nullable enable
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using NexusVideojuegoEngine.Data;
 using NexusVideojuegoEngine.Models;
-    
+
 namespace NexusVideojuegoEngine
 {
     public partial class FormMapa2D : Form
     {
         public PartidaCompletaDTO? PartidaActivaSQL { get; set; }
+        private readonly GestorBD _gestorBD = new GestorBD();
+
         private const int COLS = 15;
         private const int FILAS = 12;
         private const int TAM_CELDA = 40;
@@ -45,7 +49,9 @@ namespace NexusVideojuegoEngine
 
         private readonly Cadete cadeteActual;
         private int vidaActual;
+        private int vidaMaxActual;
         private int xpActual;
+        private int turnosJugados = 0;
         private readonly Random rng = new Random();
 
         private readonly List<Point> paredes = new List<Point>();
@@ -65,6 +71,9 @@ namespace NexusVideojuegoEngine
         private int danoFlashFrames = 0;
 
         private string ultimoEvento = "SISTEMA TÁCTICO ACTIVO — CUBRETE TRAS MUROS PARA EVITAR LÁSERES HOSTILES.";
+        private string estadoSyncSQL = "SQL: SIN RANURA";
+
+        private Button btnGuardarSQL = null!;
 
         public FormMapa2D() : this(new Cadete("Alfa-1", 0, 0, 100))
         {
@@ -76,37 +85,207 @@ namespace NexusVideojuegoEngine
             this.DoubleBuffered = true;
             this.cadeteActual = cadete ?? new Cadete("Alfa-1", 0, 0, 100);
             this.vidaActual = this.cadeteActual.Vida;
+            this.vidaMaxActual = this.cadeteActual.VidaMax;
             this.xpActual = this.cadeteActual.XP;
 
             this.tmrSimulacion.Interval = 110;
             InicializarEntidades();
+            ConfigurarBotonGuardadoSQL();
+        }
+
+        private void ConfigurarBotonGuardadoSQL()
+        {
+            int panelX = OFFSET_X + (COLS * TAM_CELDA) + 18;
+            btnGuardarSQL = new Button
+            {
+                Text = "[G] GUARDAR SQL",
+                Location = new Point(panelX + 10, OFFSET_Y + 372),
+                Size = new Size(142, 36),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(16, 185, 129),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                Font = new Font("Consolas", 8.5f, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                TabStop = false
+            };
+            btnGuardarSQL.FlatAppearance.BorderSize = 0;
+            btnGuardarSQL.Click += (s, e) =>
+            {
+                SincronizarEstadoConSQL(silencioso: false);
+                this.Focus();
+            };
+
+            this.Controls.Add(btnGuardarSQL);
         }
 
         private void FormMapa2D_Load(object? sender, EventArgs e)
         {
+            RestaurarPartidaDesdeSQL();
             this.Focus();
+        }
+
+        // =========================================================================
+        // PERSISTENCIA RELACIONAL SQL SERVER (v7.1)
+        // =========================================================================
+
+        private void RestaurarPartidaDesdeSQL()
+        {
+            if (PartidaActivaSQL == null)
+            {
+                estadoSyncSQL = "MODO LOCAL (SIN SQL)";
+                btnGuardarSQL.Enabled = false;
+                return;
+            }
+
+            btnGuardarSQL.Enabled = true;
+            turnosJugados = PartidaActivaSQL.TurnosJugados;
+            vidaMaxActual = Math.Max(1, PartidaActivaSQL.Cadete.VidaMax);
+            vidaActual = Math.Clamp(PartidaActivaSQL.Cadete.VidaActual, 1, vidaMaxActual);
+            xpActual = PartidaActivaSQL.Cadete.ExperienciaXP;
+
+            int posX = Math.Clamp(PartidaActivaSQL.Cadete.PosicionX, 0, COLS - 1);
+            int posY = Math.Clamp(PartidaActivaSQL.Cadete.PosicionY, 0, FILAS - 1);
+            if (!paredes.Contains(new Point(posX, posY)))
+            {
+                cadeteActual.PosX = posX;
+                cadeteActual.PosY = posY;
+            }
+
+            if (PartidaActivaSQL.Entidades != null && PartidaActivaSQL.Entidades.Count > 0)
+            {
+                enemigos.Clear();
+                nucleosEnergia.Clear();
+
+                foreach (EntidadMapaDTO ent in PartidaActivaSQL.Entidades)
+                {
+                    if (ent.TipoEntidad.StartsWith("Dron"))
+                    {
+                        bool esBlindado = ent.TipoEntidad == "DronBlindado" || ent.TipoEntidad == "DronSobrecargado";
+                        DronEnemigo dron = new DronEnemigo(ent.PosX, ent.PosY, esBlindado)
+                        {
+                            Vida = Math.Max(1, ent.Vida),
+                            Sobrecargado = ent.TipoEntidad == "DronSobrecargado"
+                        };
+                        if (dron.Sobrecargado) dron.VidaMax = Math.Max(dron.VidaMax, dron.Vida);
+
+                        if (ent.Estado.StartsWith("Aturdido:") && int.TryParse(ent.Estado.Split(':')[1], out int turnosAt))
+                        {
+                            dron.TurnosAturdido = turnosAt;
+                        }
+
+                        enemigos.Add(dron);
+                    }
+                    else if (ent.TipoEntidad == "NucleoEnergia")
+                    {
+                        nucleosEnergia.Add(new Point(ent.PosX, ent.PosY));
+                    }
+                    else if (ent.TipoEntidad == "RoverAliado")
+                    {
+                        robotAliado = new Point(ent.PosX, ent.PosY);
+                        dirRobot = ent.Estado == "Izquierda" ? -1 : 1;
+                    }
+                }
+
+                estadoSyncSQL = $"SQL: RANURA #{PartidaActivaSQL.IdPartida}";
+                ultimoEvento = $"[BÓVEDA SQL] PARTIDA '{PartidaActivaSQL.NombreRanura}' RESTAURADA (TURNO {turnosJugados}).";
+            }
+            else
+            {
+                SincronizarEstadoConSQL(silencioso: true);
+                ultimoEvento = $"[BÓVEDA SQL] ENLACE ACTIVO — RANURA '{PartidaActivaSQL.NombreRanura}' INICIALIZADA.";
+            }
+
+            this.Invalidate();
+        }
+
+        private void SincronizarEstadoConSQL(bool silencioso)
+        {
+            if (PartidaActivaSQL == null) return;
+
+            try
+            {
+                PartidaActivaSQL.TurnosJugados = turnosJugados;
+                PartidaActivaSQL.Cadete.VidaActual = vidaActual;
+                PartidaActivaSQL.Cadete.VidaMax = vidaMaxActual;
+                PartidaActivaSQL.Cadete.ExperienciaXP = xpActual;
+                PartidaActivaSQL.Cadete.Nivel = 1 + (xpActual / 100);
+                PartidaActivaSQL.Cadete.PosicionX = cadeteActual.PosX;
+                PartidaActivaSQL.Cadete.PosicionY = cadeteActual.PosY;
+
+                List<EntidadMapaDTO> entidadesSnapshot = new List<EntidadMapaDTO>();
+
+                foreach (DronEnemigo d in enemigos)
+                {
+                    string tipo = d.Sobrecargado ? "DronSobrecargado" : (d.VidaMax > 1 ? "DronBlindado" : "DronExplorador");
+                    entidadesSnapshot.Add(new EntidadMapaDTO
+                    {
+                        TipoEntidad = tipo,
+                        PosX = d.Posicion.X,
+                        PosY = d.Posicion.Y,
+                        Vida = d.Vida,
+                        Estado = d.TurnosAturdido > 0 ? $"Aturdido:{d.TurnosAturdido}" : "Activo"
+                    });
+                }
+
+                foreach (Point n in nucleosEnergia)
+                {
+                    entidadesSnapshot.Add(new EntidadMapaDTO
+                    {
+                        TipoEntidad = "NucleoEnergia",
+                        PosX = n.X,
+                        PosY = n.Y,
+                        Vida = 1,
+                        Estado = "Activo"
+                    });
+                }
+
+                entidadesSnapshot.Add(new EntidadMapaDTO
+                {
+                    TipoEntidad = "RoverAliado",
+                    PosX = robotAliado.X,
+                    PosY = robotAliado.Y,
+                    Vida = 100,
+                    Estado = dirRobot >= 0 ? "Derecha" : "Izquierda"
+                });
+
+                PartidaActivaSQL.Entidades = entidadesSnapshot;
+
+                if (_gestorBD.GuardarProgresoPartida(PartidaActivaSQL))
+                {
+                    estadoSyncSQL = $"SQL: GUARDADO ({DateTime.Now:HH:mm:ss})";
+                    if (!silencioso)
+                    {
+                        ultimoEvento = $"[BÓVEDA SQL] PROGRESO RESPALDADO EN RANURA '{PartidaActivaSQL.NombreRanura}' (TURNO {turnosJugados}).";
+                    }
+                    this.Invalidate();
+                }
+            }
+            catch (Exception ex)
+            {
+                estadoSyncSQL = "SQL: ERROR DE ENLACE";
+                if (!silencioso)
+                {
+                    MessageBox.Show($"Error al sincronizar el traje RIG con SQL Server:\n{ex.Message}",
+                        "Fallo de Bóveda SQL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
 
         private void InicializarEntidades()
         {
             paredes.Clear();
-            // Muro vertical izquierdo
             paredes.Add(new Point(2, 1));
             paredes.Add(new Point(2, 2));
             paredes.Add(new Point(2, 3));
-            // Barrera horizontal superior
             paredes.Add(new Point(5, 2));
             paredes.Add(new Point(6, 2));
             paredes.Add(new Point(7, 2));
-            // Muro central
             paredes.Add(new Point(9, 4));
             paredes.Add(new Point(9, 5));
             paredes.Add(new Point(9, 6));
-            // Cobertura en L zona media-baja
             paredes.Add(new Point(4, 6));
             paredes.Add(new Point(5, 6));
             paredes.Add(new Point(4, 7));
-            // Defensa cercana a extracción
             paredes.Add(new Point(11, 2));
             paredes.Add(new Point(11, 3));
             paredes.Add(new Point(11, 8));
@@ -162,8 +341,12 @@ namespace NexusVideojuegoEngine
                     if (nuevoX < COLS - 1) { nuevoX++; intentoMover = true; }
                     break;
                 case Keys.Space:
+                    turnosJugados++;
                     EjecutarPulsoTactico();
                     this.Invalidate();
+                    return true;
+                case Keys.G:
+                    SincronizarEstadoConSQL(silencioso: false);
                     return true;
                 case Keys.Escape:
                     this.Close();
@@ -181,6 +364,7 @@ namespace NexusVideojuegoEngine
                     return true;
                 }
 
+                turnosJugados++;
                 cadeteActual.PosX = nuevoX;
                 cadeteActual.PosY = nuevoY;
                 VerificarColisionesJugador();
@@ -254,20 +438,19 @@ namespace NexusVideojuegoEngine
         {
             Point posJugador = new Point(cadeteActual.PosX, cadeteActual.PosY);
 
-            // 1. Recolección de núcleos de energía
             for (int i = nucleosEnergia.Count - 1; i >= 0; i--)
             {
                 if (nucleosEnergia[i] == posJugador)
                 {
                     nucleosEnergia.RemoveAt(i);
                     xpActual += 25;
-                    vidaActual = Math.Min(cadeteActual.VidaMax, vidaActual + 15);
-                    ultimoEvento = "[NÚCLEO RECOLECTADO] +25 XP | +15 HP RESTAURADOS.";
+                    vidaActual = Math.Min(vidaMaxActual, vidaActual + 15);
                     ReubicarNuevoNucleo();
+                    SincronizarEstadoConSQL(silencioso: true);
+                    ultimoEvento = "[NÚCLEO RECOLECTADO] +25 XP | +15 HP | PROGRESO SINCRONIZADO EN SQL.";
                 }
             }
 
-            // 2. Contacto físico directo con enemigos
             for (int i = 0; i < enemigos.Count; i++)
             {
                 if (enemigos[i].Posicion == posJugador && enemigos[i].TurnosAturdido == 0)
@@ -278,13 +461,14 @@ namespace NexusVideojuegoEngine
                 }
             }
 
-            // 3. Llegada a la Nave de Extracción
             if (posJugador == naveExtraccion)
             {
                 xpActual += 100;
                 ultimoEvento = "[EXTRACCIÓN COMPLETADA] +100 XP DE MISIÓN CUMPLIDA.";
+                SincronizarEstadoConSQL(silencioso: true);
                 tmrSimulacion.Stop();
-                MessageBox.Show($"Extracción exitosa en la Nave.\nXP Total del Operador: {xpActual} PTS", "Misión Cumplida", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"Extracción exitosa en la Nave.\nXP Total del Operador: {xpActual} PTS\nProgreso respaldado en SQL Server.",
+                    "Misión Cumplida", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 this.Close();
             }
         }
@@ -373,7 +557,6 @@ namespace NexusVideojuegoEngine
             {
                 DronEnemigo dron = enemigos[i];
 
-                // 1. Si está aturdido por EMP, reduce contador y no actúa
                 if (dron.TurnosAturdido > 0)
                 {
                     dron.TurnosAturdido--;
@@ -381,7 +564,6 @@ namespace NexusVideojuegoEngine
                     continue;
                 }
 
-                // 2. Si estaba apuntando un láser en el turno previo, dispara ahora
                 if (dron.ApuntandoLaser)
                 {
                     dron.ApuntandoLaser = false;
@@ -405,7 +587,6 @@ namespace NexusVideojuegoEngine
                 int distJugador = Math.Abs(dron.Posicion.X - posJugador.X) + Math.Abs(dron.Posicion.Y - posJugador.Y);
                 dron.EnAlerta = distJugador <= 5;
 
-                // 3. Si tiene línea de vista recta a <= 5 celdas, fija objetivo con láser
                 if (distJugador <= 5 && TieneLineaDeVista(dron.Posicion, posJugador))
                 {
                     dron.ApuntandoLaser = true;
@@ -414,7 +595,6 @@ namespace NexusVideojuegoEngine
                     continue;
                 }
 
-                // 4. Movimiento: persecución si está en alerta o patrulla aleatoria
                 Point siguientePaso = dron.EnAlerta
                     ? CalcularPasoPersecucion(dron.Posicion, posJugador)
                     : CalcularPasoPatrulla(dron.Posicion);
@@ -424,7 +604,6 @@ namespace NexusVideojuegoEngine
                     dron.Posicion = siguientePaso;
                 }
 
-                // 5. Interacción enemigo con núcleos: sabotea y se sobrecarga
                 for (int n = nucleosEnergia.Count - 1; n >= 0; n--)
                 {
                     if (nucleosEnergia[n] == dron.Posicion)
@@ -438,7 +617,6 @@ namespace NexusVideojuegoEngine
                     }
                 }
 
-                // 6. Verificar contacto físico tras moverse
                 if (dron.Posicion == posJugador)
                 {
                     int dano = dron.Sobrecargado ? 25 : 15;
@@ -542,7 +720,7 @@ namespace NexusVideojuegoEngine
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            using Font fontTitulo = new Font("Consolas", 11F, FontStyle.Bold);
+            using Font fontTitulo = new Font("Consolas", 10.5F, FontStyle.Bold);
             using Font fontHud = new Font("Consolas", 9F, FontStyle.Bold);
             using Font fontMini = new Font("Consolas", 8F);
             using Font fontEstado = new Font("Consolas", 7.5F, FontStyle.Bold);
@@ -557,8 +735,9 @@ namespace NexusVideojuegoEngine
                 g.DrawLine(penHeaderLine, 0, 55, this.ClientSize.Width, 55);
             }
 
-            g.DrawString($"OPERADOR: {cadeteActual.Nombre}  |  SECTOR: ({cadeteActual.PosX:D2},{cadeteActual.PosY:D2})", fontTitulo, Brushes.Cyan, 25, 16);
-            g.DrawString($"HP: {vidaActual}/{cadeteActual.VidaMax}   |   XP: {xpActual} PTS", fontTitulo, Brushes.SpringGreen, 490, 16);
+            int nivelActual = 1 + (xpActual / 100);
+            g.DrawString($"SECTOR: ({cadeteActual.PosX:D2},{cadeteActual.PosY:D2}) | TURNO: {turnosJugados}", fontTitulo, Brushes.Cyan, 25, 16);
+            g.DrawString($"HP: {vidaActual}/{vidaMaxActual}  |  XP: {xpActual} (NV.{nivelActual})", fontTitulo, Brushes.SpringGreen, 430, 16);
 
             // 2. Tablero Táctico 15x12
             int mapW = COLS * TAM_CELDA;
@@ -658,7 +837,7 @@ namespace NexusVideojuegoEngine
                 g.DrawLine(penRayoInt, p1, p2);
             }
 
-            // 7. Panel lateral de leyenda
+            // 7. Panel lateral de leyenda y bóveda SQL
             int panelX = OFFSET_X + mapW + 18;
             using (SolidBrush brSide = new SolidBrush(Color.FromArgb(17, 24, 38)))
             {
@@ -693,11 +872,14 @@ namespace NexusVideojuegoEngine
             DibujarModeloExtraccion(g, iconX, OFFSET_Y + 216, iconSize);
             g.DrawString("Extracción", fontMini, Brushes.SpringGreen, textX, OFFSET_Y + 221);
 
-            g.DrawString("CONTROLES", fontHud, Brushes.Cyan, panelX + 10, OFFSET_Y + 260);
-            g.DrawString("W/A/S/D: Mover", fontMini, Brushes.LightGray, panelX + 10, OFFSET_Y + 284);
-            g.DrawString("Flechas: Mover", fontMini, Brushes.LightGray, panelX + 10, OFFSET_Y + 304);
-            g.DrawString("Espacio: EMP", fontMini, Brushes.Yellow, panelX + 10, OFFSET_Y + 324);
-            g.DrawString("ESC: Base", fontMini, Brushes.LightGray, panelX + 10, OFFSET_Y + 344);
+            g.DrawString("CONTROLES", fontHud, Brushes.Cyan, panelX + 10, OFFSET_Y + 252);
+            g.DrawString("W/A/S/D: Mover", fontMini, Brushes.LightGray, panelX + 10, OFFSET_Y + 274);
+            g.DrawString("Espacio: EMP", fontMini, Brushes.Yellow, panelX + 10, OFFSET_Y + 292);
+            g.DrawString("Tecla G: Guardar", fontMini, Brushes.SpringGreen, panelX + 10, OFFSET_Y + 310);
+            g.DrawString("ESC: Base", fontMini, Brushes.LightGray, panelX + 10, OFFSET_Y + 328);
+
+            g.DrawString("BÓVEDA MEMORIA", fontHud, Brushes.Gold, panelX + 10, OFFSET_Y + 352);
+            g.DrawString(estadoSyncSQL, fontEstado, Brushes.SpringGreen, panelX + 10, OFFSET_Y + 416);
 
             // 8. Consola inferior de eventos
             int footerY = OFFSET_Y + mapH + 15;
@@ -794,129 +976,69 @@ namespace NexusVideojuegoEngine
             g.DrawEllipse(penRotor, cx - r - rr, cy + r - rr, rr * 2, rr * 2);
             g.DrawEllipse(penRotor, cx + r - rr, cy + r - rr, rr * 2, rr * 2);
 
-            Point[] cuerpo = {
-                new Point(cx, cy - r + 2),
-                new Point(cx + r - 2, cy),
-                new Point(cx, cy + r - 2),
-                new Point(cx - r + 2, cy)
-            };
+            int coreR = Math.Max(4, r - 2);
+            Color colorNucleo = dron.Sobrecargado ? Color.DarkViolet : (dron.VidaMax > 1 ? Color.Chocolate : Color.Firebrick);
+            using SolidBrush brCore = new SolidBrush(colorNucleo);
+            using Pen penCore = new Pen(dron.TurnosAturdido > 0 ? Color.Cyan : Color.Gold, 1.4f);
+            g.FillEllipse(brCore, cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+            g.DrawEllipse(penCore, cx - coreR, cy - coreR, coreR * 2, coreR * 2);
 
-            Color relleno = dron.TurnosAturdido > 0
-                ? Color.FromArgb(40, 80, 120)
-                : (dron.Sobrecargado ? Color.FromArgb(110, 25, 145) : (dron.VidaMax > 1 ? Color.FromArgb(145, 65, 15) : Color.FromArgb(135, 22, 28)));
-            Color borde = dron.TurnosAturdido > 0 ? Color.DeepSkyBlue : (dron.Sobrecargado ? Color.Violet : (dron.VidaMax > 1 ? Color.Orange : Color.Tomato));
-
-            using SolidBrush brCuerpo = new SolidBrush(relleno);
-            using Pen penCuerpo = new Pen(borde, 1.5f);
-            g.FillPolygon(brCuerpo, cuerpo);
-            g.DrawPolygon(penCuerpo, cuerpo);
-
-            Brush brOjo = dron.TurnosAturdido > 0 ? Brushes.Cyan : (animFrame % 4 < 2 ? Brushes.Yellow : Brushes.OrangeRed);
-            g.FillEllipse(brOjo, cx - 3, cy - 3, 6, 6);
-
-            if (size >= 30)
+            if (size >= 30 && dron.Vida > 1)
             {
-                if (dron.TurnosAturdido > 0)
-                {
-                    g.DrawString("ZZZ", fontEstado, Brushes.Cyan, x + 8, y - 2);
-                }
-                else if (dron.EnAlerta)
-                {
-                    g.DrawString("!", fontEstado, Brushes.Yellow, x + size - 11, y);
-                }
-
-                if (dron.VidaMax > 1)
-                {
-                    int barW = size - 12;
-                    int fillW = (int)(barW * ((float)dron.Vida / dron.VidaMax));
-                    g.FillRectangle(Brushes.Black, x + 6, y + size - 5, barW, 3);
-                    g.FillRectangle(Brushes.Orange, x + 6, y + size - 5, fillW, 3);
-                }
+                g.DrawString(dron.Vida.ToString(), fontEstado, Brushes.White, cx - 4, cy - 6);
             }
         }
 
         private void DibujarModeloRobot(Graphics g, int x, int y, int size)
         {
             int pad = Math.Max(3, size / 7);
-            int w = size - pad * 2;
-            int h = size - pad * 2;
-            int rx = x + pad;
-            int ry = y + pad;
+            Rectangle chasis = new Rectangle(x + pad, y + pad + 2, size - pad * 2, size - pad * 2 - 4);
 
-            using SolidBrush brOruga = new SolidBrush(Color.FromArgb(35, 50, 70));
-            g.FillRectangle(brOruga, rx, ry + 2, 4, Math.Max(2, h - 4));
-            g.FillRectangle(brOruga, rx + w - 4, ry + 2, 4, Math.Max(2, h - 4));
-
-            using SolidBrush brChasis = new SolidBrush(Color.FromArgb(25, 85, 145));
-            using Pen penChasis = new Pen(Color.DeepSkyBlue, 1.4f);
-            g.FillRectangle(brChasis, rx + 3, ry + 4, Math.Max(2, w - 6), Math.Max(2, h - 8));
-            g.DrawRectangle(penChasis, rx + 3, ry + 4, Math.Max(2, w - 6), Math.Max(2, h - 8));
+            using SolidBrush brChasis = new SolidBrush(Color.FromArgb(30, 80, 130));
+            using Pen penBorde = new Pen(Color.DeepSkyBlue, 1.5f);
+            g.FillRectangle(brChasis, chasis);
+            g.DrawRectangle(penBorde, chasis);
 
             int cx = x + size / 2;
             int cy = y + size / 2;
-            g.DrawLine(penChasis, cx - 2, cy, cx - 2, ry);
-            g.DrawLine(penChasis, cx + 2, cy, cx + 2, ry);
-            g.FillEllipse(Brushes.LightSkyBlue, cx - 4, cy - 4, 8, 8);
+            int tr = Math.Max(3, size / 6);
+            g.FillEllipse(Brushes.LightSkyBlue, cx - tr, cy - tr, tr * 2, tr * 2);
         }
 
         private void DibujarModeloNucleo(Graphics g, int x, int y, int size)
         {
             int cx = x + size / 2;
             int cy = y + size / 2;
-            int pulso = (animFrame % 6 < 3) ? 1 : -1;
-            int r = Math.Max(4, size / 2 - 6 + pulso);
+            int r = Math.Max(4, size / 3);
 
-            Point[] diamanteExt = {
+            Point[] rombo =
+            {
                 new Point(cx, cy - r),
                 new Point(cx + r, cy),
                 new Point(cx, cy + r),
                 new Point(cx - r, cy)
             };
 
-            int ri = Math.Max(2, r / 2);
-            Point[] diamanteInt = {
-                new Point(cx, cy - ri),
-                new Point(cx + ri, cy),
-                new Point(cx, cy + ri),
-                new Point(cx - ri, cy)
-            };
-
-            using SolidBrush brAura = new SolidBrush(Color.FromArgb(90, 255, 200, 0));
-            using Pen penCristal = new Pen(Color.Gold, 1.6f);
-            using SolidBrush brNucleo = new SolidBrush(Color.LightYellow);
-
-            g.FillPolygon(brAura, diamanteExt);
-            g.DrawPolygon(penCristal, diamanteExt);
-            g.FillPolygon(brNucleo, diamanteInt);
+            using SolidBrush brNucleo = new SolidBrush(Color.FromArgb(245, 158, 11));
+            using Pen penBrillo = new Pen(Color.LightYellow, 1.5f);
+            g.FillPolygon(brNucleo, rombo);
+            g.DrawPolygon(penBrillo, rombo);
         }
 
         private void DibujarModeloExtraccion(Graphics g, int x, int y, int size)
         {
-            int pad = Math.Max(2, size / 10);
-            Rectangle padRect = new Rectangle(x + pad, y + pad, size - pad * 2, size - pad * 2);
+            int pad = Math.Max(3, size / 8);
+            Rectangle zona = new Rectangle(x + pad, y + pad, size - pad * 2, size - pad * 2);
 
-            using SolidBrush brPad = new SolidBrush(Color.FromArgb(16, 52, 34));
-            using Pen penPad = new Pen(Color.SpringGreen, 1.5f);
-            g.FillRectangle(brPad, padRect);
-            g.DrawRectangle(penPad, padRect);
-
-            Brush brBaliza = (animFrame % 4 < 2) ? Brushes.SpringGreen : Brushes.DarkGreen;
-            g.FillEllipse(brBaliza, padRect.Left + 2, padRect.Top + 2, 3, 3);
-            g.FillEllipse(brBaliza, padRect.Right - 5, padRect.Top + 2, 3, 3);
-            g.FillEllipse(brBaliza, padRect.Left + 2, padRect.Bottom - 5, 3, 3);
-            g.FillEllipse(brBaliza, padRect.Right - 5, padRect.Bottom - 5, 3, 3);
+            using SolidBrush brZona = new SolidBrush(Color.FromArgb(20, 83, 45));
+            using Pen penZona = new Pen(Color.SpringGreen, 1.8f);
+            g.FillRectangle(brZona, zona);
+            g.DrawRectangle(penZona, zona);
 
             int cx = x + size / 2;
             int cy = y + size / 2;
-            int r = Math.Max(4, size / 2 - 6);
-            Point[] nave = {
-                new Point(cx, cy - r),
-                new Point(cx + r, cy + r - 2),
-                new Point(cx, cy + r - 5),
-                new Point(cx - r, cy + r - 2)
-            };
-            using SolidBrush brNave = new SolidBrush(Color.FromArgb(180, 255, 210));
-            g.FillPolygon(brNave, nave);
+            int ir = Math.Max(3, size / 5);
+            g.DrawEllipse(penZona, cx - ir, cy - ir, ir * 2, ir * 2);
         }
     }
-}   
+}
