@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
+using NexusVideojuegoEngine.Data;
 
 namespace NexusVideojuegoEngine
 {
     public partial class FormMenu : Form
     {
-        // Controles de Login / Perfil de Cadete
+        private readonly GestorBD _gestorBD = new GestorBD();
+
         private GroupBox grpRigIdentificacion = null!;
         private Label lblRigUsuario = null!;
         private TextBox txtRigUsuario = null!;
@@ -15,14 +17,13 @@ namespace NexusVideojuegoEngine
         private Button btnRigConectar = null!;
         private Label lblRigEstado = null!;
 
-        // Controles del Menú Principal
         private GroupBox grpTermOperaciones = null!;
         private Button btnTermNarrativa = null!;
         private Button btnTermNuevaPartida = null!;
         private Button btnTermPartidasSQL = null!;
         private Button btnTermSalir = null!;
 
-        // Datos del operador autenticado
+        private int idJugadorActivo = 0;
         private string cadeteActivo = string.Empty;
         private string codigoRigActivo = string.Empty;
         private bool sesionIniciada = false;
@@ -37,7 +38,7 @@ namespace NexusVideojuegoEngine
         {
             this.Controls.Clear();
 
-            this.Text = "NEXUS-09 // TERMINAL DE ACCESO Y MANDO (v6.7)";
+            this.Text = "DEAD SIGNAL: PROTOCOLO RIG // TERMINAL DE MANDO (v6.9)";
             this.Size = new Size(840, 520);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -46,7 +47,7 @@ namespace NexusVideojuegoEngine
 
             Label lblHeader = new Label
             {
-                Text = "ESTACIÓN ORBITAL NEXUS-09  |  SISTEMA DE CONTENCIÓN",
+                Text = "DEAD SIGNAL: PROTOCOLO RIG  |  CUBIERTA ORBITAL 09",
                 Font = new Font("Consolas", 15, FontStyle.Bold),
                 ForeColor = Color.FromArgb(245, 158, 11),
                 Location = new Point(28, 22),
@@ -55,19 +56,16 @@ namespace NexusVideojuegoEngine
 
             Label lblSub = new Label
             {
-                Text = "PROTOCOLO ACTIVO: OPERACIÓN MEMORIA — IDENTIFIQUE SU TRAJE RIG PARA CONTINUAR",
+                Text = "OPERACIÓN MEMORIA — SINCRONICE SU TARJETA RIG CON LA BÓVEDA SQL SERVER",
                 Font = new Font("Consolas", 9.5f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(148, 163, 184),
                 Location = new Point(30, 52),
                 AutoSize = true
             };
 
-            // =================================================================
-            // PANEL IZQUIERDO: LOGIN / REGISTRO DE PERFIL DE CADETE
-            // =================================================================
             grpRigIdentificacion = new GroupBox
             {
-                Text = " [ 01. ACCESO DE OPERADOR (RIG) ] ",
+                Text = " [ 01. AUTENTICACIÓN DE TRAJE RIG ] ",
                 Font = new Font("Consolas", 10.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(6, 182, 212),
                 Location = new Point(28, 92),
@@ -76,7 +74,7 @@ namespace NexusVideojuegoEngine
 
             lblRigUsuario = new Label
             {
-                Text = "ALIAS DEL CADETE:",
+                Text = "ALIAS DEL OPERADOR:",
                 Font = new Font("Consolas", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(226, 232, 240),
                 Location = new Point(22, 42),
@@ -95,7 +93,7 @@ namespace NexusVideojuegoEngine
 
             lblRigCodigo = new Label
             {
-                Text = "CÓDIGO DE TRAJE RIG (Ej. EXO-09):",
+                Text = "CÓDIGO DE UNIDAD RIG (Ej. RIG-09):",
                 Font = new Font("Consolas", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(226, 232, 240),
                 Location = new Point(22, 115),
@@ -110,12 +108,12 @@ namespace NexusVideojuegoEngine
                 BackColor = Color.FromArgb(23, 33, 54),
                 ForeColor = Color.FromArgb(52, 211, 153),
                 BorderStyle = BorderStyle.FixedSingle,
-                Text = "EXO-09"
+                Text = "RIG-09"
             };
 
             btnRigConectar = new Button
             {
-                Text = "SINCRONIZAR TARJETA RIG",
+                Text = "SINCRONIZAR TARJETA RIG (SQL)",
                 Location = new Point(22, 192),
                 Size = new Size(315, 42),
                 FlatStyle = FlatStyle.Flat,
@@ -129,11 +127,11 @@ namespace NexusVideojuegoEngine
 
             lblRigEstado = new Label
             {
-                Text = "ESTADO: ENLACE BLOQUEADO\nIngrese su alias para habilitar los sistemas.",
+                Text = "ESTADO SQL: DESCONECTADO\nIngrese su alias para validar en DeadSignal_DB.",
                 Font = new Font("Consolas", 9f),
                 ForeColor = Color.FromArgb(248, 113, 113),
-                Location = new Point(22, 255),
-                Size = new Size(315, 75)
+                Location = new Point(22, 252),
+                Size = new Size(315, 90)
             };
 
             grpRigIdentificacion.Controls.Add(lblRigUsuario);
@@ -143,9 +141,6 @@ namespace NexusVideojuegoEngine
             grpRigIdentificacion.Controls.Add(btnRigConectar);
             grpRigIdentificacion.Controls.Add(lblRigEstado);
 
-            // =================================================================
-            // PANEL DERECHO: MENÚ PRINCIPAL DE OPERACIONES
-            // =================================================================
             grpTermOperaciones = new GroupBox
             {
                 Text = " [ 02. COMANDOS DE LA ESTACIÓN ] ",
@@ -162,18 +157,18 @@ namespace NexusVideojuegoEngine
                 historia.ShowDialog(this);
             };
 
-            btnTermNuevaPartida = CrearBotonMenu("> DESPLEGAR EN SECTOR 15x12", 108, Color.FromArgb(37, 99, 235), Color.White);
+            btnTermNuevaPartida = CrearBotonMenu("> DESPLEGAR EN CUBIERTA 15x12", 108, Color.FromArgb(37, 99, 235), Color.White);
             btnTermNuevaPartida.Enabled = false;
             btnTermNuevaPartida.Click += BtnTermNuevaPartida_Click;
 
-            btnTermPartidasSQL = CrearBotonMenu("> BÓVEDA DE MEMORIA (SQL / DATOS)", 174, Color.FromArgb(30, 41, 59), Color.FromArgb(6, 182, 212));
+            btnTermPartidasSQL = CrearBotonMenu("> BÓVEDA DE MEMORIA (PARTIDAS SQL)", 174, Color.FromArgb(30, 41, 59), Color.FromArgb(6, 182, 212));
             btnTermPartidasSQL.Enabled = false;
             btnTermPartidasSQL.Click += BtnTermPartidasSQL_Click;
 
             btnTermSalir = CrearBotonMenu("> DESCONECTAR TERMINAL", 275, Color.FromArgb(127, 29, 29), Color.White);
             btnTermSalir.Click += (s, e) =>
             {
-                DialogResult r = MessageBox.Show("¿Desea cerrar la terminal de NEXUS-09?", "Confirmar salida", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                DialogResult r = MessageBox.Show("¿Desea cerrar la terminal de DEAD SIGNAL?", "Confirmar salida", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (r == DialogResult.Yes) Application.Exit();
             };
 
@@ -214,22 +209,44 @@ namespace NexusVideojuegoEngine
 
             if (string.IsNullOrWhiteSpace(usuario) || string.IsNullOrWhiteSpace(codigo))
             {
-                MessageBox.Show("Debe ingresar su Alias de Cadete y Código RIG para autenticar el enlace.",
+                MessageBox.Show("Debe ingresar su Alias de Operador y Código RIG para autenticar el enlace.",
                     "Acceso Denegado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 txtRigUsuario.Focus();
                 return;
             }
 
-            cadeteActivo = usuario;
-            codigoRigActivo = codigo;
-            sesionIniciada = true;
+            try
+            {
+                btnRigConectar.Enabled = false;
+                btnRigConectar.Text = "CONECTANDO A SQL SERVER...";
+                Application.DoEvents();
 
-            lblRigEstado.ForeColor = Color.FromArgb(52, 211, 153);
-            lblRigEstado.Text = $"ESTADO: ENLACE ACTIVO\nOperador: {cadeteActivo} [{codigoRigActivo}]\nSistemas tácticos desbloqueados.";
+                var resultado = _gestorBD.ObtenerORegistrarJugador(usuario, codigo);
 
-            btnTermNuevaPartida.Enabled = true;
-            btnTermPartidasSQL.Enabled = true;
-            btnRigConectar.Text = "PERFIL SINCRONIZADO ✓";
+                idJugadorActivo = resultado.IdJugador;
+                cadeteActivo = usuario;
+                codigoRigActivo = codigo;
+                sesionIniciada = true;
+
+                string tipoRegistro = resultado.EsNuevo ? "NUEVO PERFIL CREADO" : "PERFIL RECUPERADO";
+                lblRigEstado.ForeColor = Color.FromArgb(52, 211, 153);
+                lblRigEstado.Text = $"ESTADO SQL: CONECTADO [{tipoRegistro}]\nID Operador: #{idJugadorActivo} | {cadeteActivo} [{codigoRigActivo}]\nBóveda DeadSignal_DB operativa.";
+
+                btnTermNuevaPartida.Enabled = true;
+                btnTermPartidasSQL.Enabled = true;
+                btnRigConectar.Text = $"RIG #{idJugadorActivo} SINCRONIZADO ✓";
+                btnRigConectar.Enabled = true;
+            }
+            catch (Exception ex)
+            {
+                btnRigConectar.Enabled = true;
+                btnRigConectar.Text = "REINTENTAR CONEXIÓN SQL";
+                lblRigEstado.ForeColor = Color.FromArgb(248, 113, 113);
+                lblRigEstado.Text = "ERROR DE ENLACE SQL SERVER.\nVerifique que DeadSignal_DB esté activa.";
+
+                MessageBox.Show($"No se pudo conectar con SQL Server (DeadSignal_DB):\n\n{ex.Message}",
+                    "Fallo de Bóveda de Memoria", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void BtnTermNuevaPartida_Click(object? sender, EventArgs e)
@@ -237,7 +254,7 @@ namespace NexusVideojuegoEngine
             if (!sesionIniciada) return;
 
             FormMapa2D mapaTactico = new FormMapa2D();
-            mapaTactico.Text = $"NEXUS-09 — Operador: {cadeteActivo} [{codigoRigActivo}]";
+            mapaTactico.Text = $"DEAD SIGNAL — Operador #{idJugadorActivo}: {cadeteActivo} [{codigoRigActivo}]";
             this.Hide();
             mapaTactico.FormClosed += (s, args) => this.Show();
             mapaTactico.Show();
